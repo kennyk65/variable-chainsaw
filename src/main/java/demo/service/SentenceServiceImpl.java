@@ -1,83 +1,87 @@
 package demo.service;
 
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import rx.Observable;
+import rx.functions.Action1;
+import demo.domain.Sentence;
 import demo.domain.Word;
 
 /**
- * Build a sentence by assembling randomly generated subjects, verbs, 
- * articles, adjectives, and nouns.  The individual parts of speech will 
- * be obtained by calling the various DAOs.
+ * Build a sentence by assembling randomly generated subjects, verbs, articles,
+ * adjectives, and nouns. The individual parts of speech will be obtained by
+ * calling the various DAOs.
+ * 
+ * @author Ken Krueger, Jorge Centeno Fernandez 
  */
 @Service
 public class SentenceServiceImpl implements SentenceService {
 
 	@Autowired WordService wordService;
-	
 
 	/**
 	 * Assemble a sentence by gathering random words of each part of speech:
 	 */
 	public String buildSentence() {
+		Sentence sentence = new Sentence();
 		
-		//	The following code works, but not consistently.  First we launch
-		//	three calls to the subject, adjective, and noun services:
-		Observable<Word> observableSubject = wordService.getSubject();
-		Observable<Word> observableAdjective = wordService.getAdjective();
-		Observable<Word> observableNoun = wordService.getNoun();
-
-		//	This middle part of the sentence doesn't have to be reactive,
-		//	but I thought I would experiment:
-		Observable<String> observableTheRest = Observable.just(
-				wordService.getVerb().getString(),
-				" ",
-				wordService.getArticle().getString(),
-				" "
-		);	
-
-		//	These StringBuffers are only used within the Subscribers below to grab 
-		//	results out of the Observables.  With a Future, you'd just say "get()":		
-		StringBuffer subject = new StringBuffer();
-		StringBuffer adjective = new StringBuffer();
-		StringBuffer noun = new StringBuffer();
-		StringBuffer theRest = new StringBuffer();
+		//	Launch calls to all child services, using Observables 
+		//	to handle the responses from each one:
+		List<Observable<Word>> observables = createObservables();
 		
-		//	Grab the results.  Note that these subscribers 
-		//	could fire at any time and in any order:
-		observableSubject.subscribe( (w) -> { subject.append(w.getWord()); } );
-		observableAdjective.subscribe( (w) -> { adjective.append(w.getWord()); } );
-		observableNoun.subscribe( (w) -> { noun.append(w.getWord()); } );
-		observableTheRest.subscribe( (s) -> { theRest.append(s); } );
+		//	Use a CountDownLatch to detect when ALL of the calls are complete:
+		CountDownLatch latch = new CountDownLatch(observables.size());
 		
-		//	And here is the problem:  it is possible that one or more 
-		//	of these items have not yet been populated by the time this 
-		//	return statement is reached.  How to check?
-		return subject + " " + theRest + " " + adjective + " " + noun;
+		//	Merge the 5 observables into one, so we can add a common subscriber:
+		Observable.merge(observables).subscribe(
+			//	(Lambda) When each service call is complete, contribute its word
+			//	to the sentence, and decrement the CountDownLatch:
+			(word) -> {
+				sentence.add(word);
+	            latch.countDown();
+	        }
+		);
+		
+		//	This code will wait until the LAST service call is complete:
+		waitForAll(latch);
 
-	}	
+		//	Return the completed sentence:
+		return sentence.toString();
+	}
+
+
+	/**
+	 * Ultimately, we will need to wait for all 5 calls to 
+	 * be completed before the sentence can be assembled.  
+	 * This code waits for the last call to come back:
+	 */
+	private void waitForAll(CountDownLatch latch) {
+		try {
+			latch.await();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
 	
 	
-//	public String buildSentence() {
-//		
-//		Observable<Word> observableSubject = wordService.getSubject();
-//		Observable<Word> observableAdjective = wordService.getAdjective();
-//		Observable<Word> observableNoun = wordService.getNoun();
-//		
-//		
-//		StringBuffer sentence = new StringBuffer();
-//
-//		observableSubject.subscribe( (w) -> { sentence.append(w.getWord() + " "); } );
-//
-//		sentence.append(wordService.getVerb().getString());
-//		sentence.append(" ");
-//		sentence.append(wordService.getArticle().getString());
-//		sentence.append(" ");
-//
-//		observableAdjective.subscribe( (w) -> { sentence.append(w.getWord() + " "); } );
-//		observableNoun.subscribe( (w) -> { sentence.append(w.getWord()); } );
-//
-//		return sentence.toString();
-//	}		
+	/**
+	 * This code launches calls to all 5 child services, 
+	 * using Observables to monitor the completion:
+	 */
+	private List<Observable<Word>> createObservables(){
+		List<Observable<Word>> observables = new ArrayList<>();
+		observables.add(wordService.getSubject());
+		observables.add(wordService.getVerb());
+		observables.add(wordService.getArticle());
+		observables.add(wordService.getAdjective());
+		observables.add(wordService.getNoun());
+		return observables;
+	}
+	
 }

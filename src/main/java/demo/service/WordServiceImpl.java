@@ -15,6 +15,7 @@ import demo.dao.NounClient;
 import demo.dao.SubjectClient;
 import demo.dao.VerbClient;
 import demo.domain.Word;
+import demo.domain.Word.Role;
 
 @Service
 public class WordServiceImpl implements WordService {
@@ -32,19 +33,31 @@ public class WordServiceImpl implements WordService {
 	    return new ObservableResult<Word>() {
 	        @Override
 	        public Word invoke() {
-	        	return subjectClient.getWord();
+	        	return new Word (subjectClient.getWord().getWord(), Role.subject);
 	        }
 	    };
 	}
 	
 	@Override
-	public Word getVerb() {
-		return verbClient.getWord();
+	@HystrixCommand(fallbackMethod="getFallbackVerb")
+	public Observable<Word> getVerb() {
+		 return new ObservableResult<Word>() {
+		        @Override
+		        public Word invoke() {
+		        	return new Word (verbClient.getWord().getWord(), Role.verb);
+		        }
+		    };
 	}
 	
 	@Override
-	public Word getArticle() {
-		return articleClient.getWord();
+	@HystrixCommand(fallbackMethod="getFallbackArticle")
+	public Observable<Word> getArticle() {
+		 return new ObservableResult<Word>() {
+		        @Override
+		        public Word invoke() {
+		        	return new Word (articleClient.getWord().getWord(), Role.article);
+		        }
+		 };
 	}
 	
 	@Override
@@ -53,7 +66,7 @@ public class WordServiceImpl implements WordService {
 	    return new ObservableResult<Word>() {
 	        @Override
 	        public Word invoke() {
-	        	return adjectiveClient.getWord();
+	        	return new Word (adjectiveClient.getWord().getWord(), Role.adjective);
 	        }
 	    };
 	}
@@ -64,7 +77,7 @@ public class WordServiceImpl implements WordService {
 	    return new ObservableResult<Word>() {
 	        @Override
 	        public Word invoke() {
-	        	return nounClient.getWord();
+	        	return new Word (nounClient.getWord().getWord(), Role.noun);
 	        }
 	    };
 	}	
@@ -72,15 +85,23 @@ public class WordServiceImpl implements WordService {
 	
 	
 	public Word getFallbackSubject() {
-		return new Word("Someone");
+		return new Word("Someone", Role.subject);
+	}
+	
+	public Word getFallbackVerb() {
+		return new Word("does", Role.verb);
+	}
+	
+	public Word getFallbackArticle() {
+		return new Word("", Role.article);
 	}
 	
 	public Word getFallbackAdjective() {
-		return new Word("");
+		return new Word("", Role.adjective);
 	}
 	
 	public Word getFallbackNoun() {
-		return new Word("something");
+		return new Word("something", Role.noun);
 	}
 
 }
